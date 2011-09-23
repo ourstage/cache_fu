@@ -15,23 +15,42 @@ module ActsAsCached
     def cache_options
       cache_config[:options] ||= {}
     end
-
+    
     def get_cache(*args)
       options = args.last.is_a?(Hash) ? args.pop : {}
       args    = args.flatten
+      cache_time = options[:ttl] || cache_config[:ttl] || 1500
 
       ##
       # head off to get_caches if we were passed multiple cache_ids
-      if args.size > 1
-        return get_caches(args, options)
-      else
-        cache_id = args.first
-      end
-
+      return get_caches_as_list(args, options) if args.size > 1
+      
+      cache_id = args.first
+      lock_cache_time = [(0.09 * cache_time).round, 3.seconds].max
+      expiry_cache_id = "xpy_" + cache_id.to_s
+      
       if (item = fetch_cache(cache_id)).nil?
         set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
       else
-        @@nil_sentinel == item ? nil : item
+        if item.is_a?(Hash) && item.has_key?(:exxpiry) && item.has_key?(:value)
+          expiration_date = item[:exxpiry]
+          item = item[:value]
+        end
+        
+        item = nil if @@nil_sentinel == item
+        
+        if expiration_date.present? && Time.now.utc > expiration_date && cache_lock(cache_id, lock_cache_time)
+          begin
+            if block_given?
+              item = set_cache(cache_id, yield, cache_time)
+            elsif cache_id == cache_id.to_i
+              item = set_cache(cache_id, fetch_cachable_data(cache_id), cache_time)
+            end 
+          rescue Exception => ex
+            item = nil
+          end
+          cache_unlock(cache_id)
+        end
       end
     end
 
@@ -85,11 +104,20 @@ module ActsAsCached
         hash[key]
       end
     end
-
+    
+    def get(id)
+      id.is_a?(Array) ? get_caches_as_list(id) : get_cache(id.to_i)
+    end
+    
     def set_cache(cache_id, value, ttl = nil)
       value.tap do |v|
         v = @@nil_sentinel if v.nil?
-        cache_store(:set, cache_key(cache_id), v, ttl || cache_config[:ttl] || 1500)
+        
+        cache_time = ttl || cache_config[:ttl] || 1500
+        raise ArgumentError.new("ttl must be <= 30.days") if cache_time > 30.days
+        v = { :exxpiry => Time.now.utc + (0.8 * cache_time).round, :value => v } if cache_time > 5.seconds
+      
+        cache_store(:set, cache_key(cache_id), v, cache_time)
       end
     end
 
@@ -150,12 +178,35 @@ module ActsAsCached
       end
     end
     alias :cached :caches
+    alias :cached_method :caches
+
+    def clear_caches(method, options = {})
+      if options.keys.include?(:with)
+        with = options.delete(:with)
+        clear_cache("#{method}:#{with}", options) { send(method, with) }
+      elsif withs = options.delete(:withs)
+        clear_cache("#{method}:#{withs}", options) { send(method, *withs) }
+      else
+        clear_cache(method, options) { send(method) }
+      end
+    end
+    alias :clear_cached_method :clear_caches
 
     def cached?(cache_id = nil)
       fetch_cache(cache_id).nil? ? false : true
     end
     alias :is_cached? :cached?
+    
+   # Get a 5-second lock on another cache item
+    def cache_lock(cache_id, lock_cache_time = 5.seconds)
+      stored = cache_store(:add, "lck_" + cache_key(cache_id), 1, lock_cache_time)
+      (stored =~ /^STORED/) != nil
+    end
 
+    def cache_unlock(cache_id)
+      cache_store(:delete, "lck_" + cache_key(cache_id))
+    end
+    
     def fetch_cache(cache_id)
       return if ActsAsCached.config[:skip_gets]
 
@@ -218,6 +269,16 @@ module ActsAsCached
         raise error
       end
     rescue Exception => error
+      # do a retry for timeout errors since they shouldn't raise as exceptions
+      tries ||= 1
+      do_reset = error.message =~ /Broken pipe/i      # this happens if the memcached server is restarted while the app is running
+      
+      if tries < 2 && (do_reset || error.message == 'IO timeout')      # try a total of two times
+        Rails.logger.debug "MemCache Error: #{error.message} (tries: #{tries}): " rescue nil
+        tries += 1
+        CACHE.reset if do_reset     # let's try to reconnect
+        retry
+      end
       if ActsAsCached.config[:raise_errors]
         raise error
       else
@@ -283,6 +344,19 @@ module ActsAsCached
       end
     end
     alias :cached :caches
+    alias :cached_method :caches
+    
+    def clear_caches(method, options = {})
+      if options.keys.include?(:with)
+        with = options.delete(:with)
+        clear_cache("#{method}:#{with}", options) { send(method, with) }
+      elsif withs = options.delete(:withs)
+        clear_cache("#{method}:#{withs}", options) { send(method, *withs) }
+      else
+        clear_cache(method, options) { send(method) }
+      end
+    end
+    alias :clear_cached_method :clear_caches
 
     # Ryan King
     def set_cache_with_associations
