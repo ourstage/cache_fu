@@ -52,6 +52,7 @@ module ActsAsCached
           cache_unlock(cache_id)
         end
       end
+      item
     end
 
     ##
@@ -78,9 +79,10 @@ module ActsAsCached
 
       misses = keys - hits.keys
       hits.each { |k, v| hits[k] = nil if v == @@nil_sentinel }
+      hit_values = Hash[*hits.values.map{|h| [h[:value].id, h[:value]]}.flatten]
 
       # Return our hash if there are no misses
-      return hits.values.index_by(&:cache_id) if misses.empty?
+      return hit_values if misses.empty?
 
       # Find any missed records
       needed_ids     = keys_map.values_at(*misses)
@@ -88,9 +90,10 @@ module ActsAsCached
 
       # Cache the missed records
       missed_records.each { |missed_record| missed_record.set_cache(options[:ttl]) }
-
+      miss_values = Hash[*missed_records.map{|m| [m.id, m]}.flatten]
+      
       # Return all records as a hash indexed by object cache_id
-      (hits.values + missed_records).index_by(&:cache_id)
+      (hit_values.merge(miss_values))
     end
 
     # simple wrapper for get_caches that
