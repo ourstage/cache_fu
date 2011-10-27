@@ -30,7 +30,7 @@ module ActsAsCached
       expiry_cache_id = "xpy_" + cache_id.to_s
       
       if (item = fetch_cache(cache_id)).nil?
-        set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
+        item = set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
       else
         if item.is_a?(Hash) && item.has_key?(:exxpiry) && item.has_key?(:value)
           expiration_date = item[:exxpiry]
