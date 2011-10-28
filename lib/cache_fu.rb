@@ -33,6 +33,7 @@ module ActsAsCached
       if find_by = options.delete(:find_by)
         options[:finder]   = "find_by_#{find_by}".to_sym
         options[:cache_id] = find_by
+        create_cache_methods_for(find_by, false)
       end
       
       slugs_key = options.delete(:slugs_key)
