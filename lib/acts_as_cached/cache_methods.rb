@@ -29,6 +29,7 @@ module ActsAsCached
       lock_cache_time = [(0.09 * cache_time).round, 3.seconds].max
       expiry_cache_id = "xpy_" + cache_id.to_s
       
+      item = nil
       if (item = fetch_cache(cache_id)).nil?
         item = set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
       else
@@ -223,12 +224,14 @@ module ActsAsCached
     end
 
     def fetch_cachable_data(cache_id = nil)
+      return nil if cache_id.is_a?(String) && cache_id.include?(':')
+
       finder = cache_config[:finder] || :find
       return send(finder) unless cache_id
 
       args = [cache_id]
       args << cache_options.dup unless cache_options.blank?
-      send(finder, *args)
+      data = send(finder, *args)
     end
 
     def cache_namespace
