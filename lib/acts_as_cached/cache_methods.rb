@@ -109,7 +109,11 @@ module ActsAsCached
     end
     
     def get(id)
-      id.is_a?(Array) ? get_caches_as_list(id) : get_cache(id.to_i)
+      if id.is_a?(Array)
+        get_caches_as_list(id) rescue []
+      else
+        get_cache(id.to_i) rescue nil
+      end
     end
     
     def set_cache(cache_id, value, ttl = nil)
