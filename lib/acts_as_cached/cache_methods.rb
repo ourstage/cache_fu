@@ -226,7 +226,7 @@ module ActsAsCached
     def fetch_cachable_data(cache_id = nil)
       return nil if cache_id.is_a?(String) && cache_id.include?(':')
 
-      finder = cache_config[:finder] || :find
+      finder = :find
       return send(finder) unless cache_id
 
       args = [cache_id]
