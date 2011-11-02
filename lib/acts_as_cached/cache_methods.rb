@@ -45,7 +45,8 @@ module ActsAsCached
             if block_given?
               item = set_cache(cache_id, yield, cache_time)
             elsif cache_id == cache_id.to_i
-              item = set_cache(cache_id, fetch_cachable_data(cache_id), cache_time)
+              fetched_data = fetch_cachable_data(cache_id)
+              item = set_cache(cache_id, fetched_data, cache_time) unless fetched_data.blank?
             end 
           rescue Exception => ex
             item = nil
@@ -233,7 +234,7 @@ module ActsAsCached
 
       args = [cache_id]
       args << cache_options.dup unless cache_options.blank?
-      data = send(finder, *args)
+      data = send(finder, *args) rescue nil
     end
 
     def cache_namespace
