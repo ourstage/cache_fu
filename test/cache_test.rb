@@ -266,7 +266,7 @@ context "A Ruby object acting as cached" do
   specify "should be able to set itself to the cache with an arbitrary ttl" do
     ttl = 1500
     Story.expects(:set_cache).with(1, @story, ttl)
-    @story.set_cache(ttl)
+    @story.set_cache(@story.id, @story, ttl)
   end
 
   specify "should be able to cache arbitrary instance methods using caches" do
