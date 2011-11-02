@@ -46,9 +46,9 @@ module ActsAsCached
 
       # set up the automatic cache clearing if it is an AR model
       if respond_to?(:after_save)
-        create_expire_cache_method(fields)
-        after_save(:expire_cache)
-        after_destroy(:expire_cache) if respond_to?(:after_destroy)
+        create_expire_cache_method([fields, find_by].flatten)
+        after_save(:our_expire_cache)
+        after_destroy(:our_expire_cache) if respond_to?(:after_destroy)
       end
 
       cache_config.replace  options.reject { |key,| not Config.valued_keys.include? key }
@@ -59,10 +59,10 @@ module ActsAsCached
     end
     
     def create_expire_cache_method(fields)
-      define_method(:expire_cache) do |*args|
+      define_method(:our_expire_cache) do |*args|
         return unless self.changed? || (args.last && args.last[:force])
         # clear the default, by_id cache
-        self.clear_cache
+        self.expire_cache
         # clear the other :caches_by caches
         fields.each do |field|
           find_method = "find_by_#{field}".to_sym

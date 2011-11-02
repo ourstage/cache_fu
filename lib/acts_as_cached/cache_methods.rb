@@ -194,11 +194,11 @@ module ActsAsCached
     def clear_caches(method, options = {})
       if options.keys.include?(:with)
         with = options.delete(:with)
-        clear_cache("#{method}:#{with}", options) { send(method, with) }
+        clear_cache("#{method}:#{with}")
       elsif withs = options.delete(:withs)
-        clear_cache("#{method}:#{withs}", options) { send(method, *withs) }
+        clear_cache("#{method}:#{withs}")
       else
-        clear_cache(method, options) { send(method) }
+        clear_cache(method)
       end
     end
     alias :clear_cached_method :clear_caches
