@@ -29,8 +29,8 @@ module ActsAsCached
       lock_cache_time = [(0.09 * cache_time).round, 3.seconds].max
       expiry_cache_id = "xpy_" + cache_id.to_s
       
-      item = nil
-      if (item = fetch_cache(cache_id)).nil?
+      item = fetch_cache(cache_id)
+      if item.nil? || (item.is_a?(Hash) && item[:value] == @@nil_sentinel)
         item = set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
       else
         if item.is_a?(Hash) && item.has_key?(:exxpiry) && item.has_key?(:value)
