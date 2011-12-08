@@ -1,5 +1,8 @@
+require 'new_relic/agent/method_tracer'
 module ActsAsCached
   module ClassMethods
+    extend NewRelic::Agent::MethodTracer
+    
     @@nil_sentinel = :_nil
 
     def cache_config
@@ -17,41 +20,44 @@ module ActsAsCached
     end
     
     def get_cache(*args)
-      options = args.last.is_a?(Hash) ? args.pop : {}
-      args    = args.flatten
-      cache_time = options[:ttl] || cache_config[:ttl] || 1500
+      item = nil
+      self.class.trace_execution_scoped(['CacheFu/get_cache']) do 
+        options = args.last.is_a?(Hash) ? args.pop : {}
+        args    = args.flatten
+        cache_time = options[:ttl] || cache_config[:ttl] || 1500
 
-      ##
-      # head off to get_caches if we were passed multiple cache_ids
-      return get_caches_as_list(args, options) if args.size > 1
+        ##
+        # head off to get_caches if we were passed multiple cache_ids
+        return get_caches_as_list(args, options) if args.size > 1
       
-      cache_id = args.first
-      lock_cache_time = [(0.09 * cache_time).round, 3.seconds].max
-      expiry_cache_id = "xpy_" + cache_id.to_s
+        cache_id = args.first
+        lock_cache_time = [(0.09 * cache_time).round, 3.seconds].max
+        expiry_cache_id = "xpy_" + cache_id.to_s
       
-      item = fetch_cache(cache_id)
-      if item.nil? || (item.is_a?(Hash) && item[:value] == @@nil_sentinel)
-        item = set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
-      else
-        if item.is_a?(Hash) && item.has_key?(:exxpiry) && item.has_key?(:value)
-          expiration_date = item[:exxpiry]
-          item = item[:value]
-        end
-        
-        item = nil if @@nil_sentinel == item
-        
-        if expiration_date.present? && Time.now.utc > expiration_date && cache_lock(cache_id, lock_cache_time)
-          begin
-            if block_given?
-              item = set_cache(cache_id, yield, cache_time)
-            elsif cache_id == cache_id.to_i
-              fetched_data = fetch_cachable_data(cache_id)
-              item = set_cache(cache_id, fetched_data, cache_time) unless fetched_data.blank?
-            end 
-          rescue Exception => ex
-            item = nil
+        item = fetch_cache(cache_id)
+        if item.nil? || (item.is_a?(Hash) && item[:value] == @@nil_sentinel)
+          item = set_cache(cache_id, block_given? ? yield : fetch_cachable_data(cache_id), options[:ttl])
+        else
+          if item.is_a?(Hash) && item.has_key?(:exxpiry) && item.has_key?(:value)
+            expiration_date = item[:exxpiry]
+            item = item[:value]
           end
-          cache_unlock(cache_id)
+        
+          item = nil if @@nil_sentinel == item
+        
+          if expiration_date.present? && Time.now.utc > expiration_date && cache_lock(cache_id, lock_cache_time)
+            begin
+              if block_given?
+                item = set_cache(cache_id, yield, cache_time)
+              elsif cache_id == cache_id.to_i
+                fetched_data = fetch_cachable_data(cache_id)
+                item = set_cache(cache_id, fetched_data, cache_time) unless fetched_data.blank?
+              end 
+            rescue Exception => ex
+              item = nil
+            end
+            cache_unlock(cache_id)
+          end
         end
       end
       item
@@ -103,13 +109,17 @@ module ActsAsCached
     # simple wrapper for get_caches that
     # returns the items as an ordered array
     def get_caches_as_list(*args)
-      cache_ids = args.last.is_a?(Hash) ? args.first : args
-      cache_ids = [cache_ids].flatten
-      hash      = get_caches(*args)
+      multi_result = []
+      self.class.trace_execution_scoped(['CacheFu/multiget']) do 
+        cache_ids = args.last.is_a?(Hash) ? args.first : args
+        cache_ids = [cache_ids].flatten
+        hash      = get_caches(*args)
 
-      cache_ids.map do |key|
-        hash[key]
+        multi_result = cache_ids.map do |key|
+          hash[key]
+        end
       end
+      multi_result
     end
     
     def get(id)
