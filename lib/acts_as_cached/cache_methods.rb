@@ -77,7 +77,7 @@ module ActsAsCached
       keys      = cache_keys(cache_ids)
 
       # Map memcache keys to object cache_ids in { memcache_key => object_id } format
-      keys_map = Hash[*keys.zip(cache_ids).flatten]
+      keys_map = Hash[*keys.zip(cache_ids.reject{|cid| cid.blank?}).flatten]
 
       # Call get_multi and figure out which keys were missed based on what was a hit
       hits = ActsAsCached.config[:disabled] ? {} : (cache_store(:get_multi, *keys) || {})
@@ -97,10 +97,11 @@ module ActsAsCached
       missed_records = Array(fetch_cachable_data(needed_ids))
 
       # Cache the missed records
-      missed_records.each do |missed_record|
+      miss_values = {}
+      missed_records.flatten.each do |missed_record|
         set_cache(missed_record.id.to_i, missed_record, options[:ttl])
+        miss_values[missed_record.id] = missed_record
       end
-      miss_values = Hash[*missed_records.map{|m| [m.id, m]}.flatten]
       
       # Return all records as a hash indexed by object cache_id
       (hit_values.merge(miss_values))
@@ -116,7 +117,7 @@ module ActsAsCached
         hash      = get_caches(*args)
 
         multi_result = cache_ids.map do |key|
-          hash[key]
+          hash[key.to_i]
         end
       end
       multi_result
@@ -245,7 +246,7 @@ module ActsAsCached
       finder = :find
       return send(finder) unless cache_id
 
-      args = [cache_id]
+      args = [cache_id].flatten
       args << cache_options.dup unless cache_options.blank?
       data = send(finder, *args) rescue nil
     end
