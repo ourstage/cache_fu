@@ -123,7 +123,10 @@ module ActsAsCached
     end
     
     def get(id)
+      return nil if id.nil? || (id == 0)
       if id.is_a?(Array)
+        return [] if id.blank?
+        return [nil] if (id.length == 1) && ((id[0].nil?) || (id[0] == 0))
         get_caches_as_list(id) rescue []
       else
         get_cache(id.to_i) rescue nil
