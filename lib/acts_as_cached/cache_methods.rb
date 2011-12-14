@@ -333,8 +333,8 @@ module ActsAsCached
       self.class.get_cache(cache_id(key), options, &block)
     end
 
-    def set_cache(cache_id, value, ttl = nil)
-      self.class.set_cache(cache_id, value, ttl)
+    def set_cache(key, value, ttl = nil)
+      self.class.set_cache(cache_id(key), value, ttl)
     end
 
     def reset_cache(key = nil)
