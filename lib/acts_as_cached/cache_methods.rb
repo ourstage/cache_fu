@@ -70,90 +70,102 @@ module ActsAsCached
     #
     # If your cache store does not support #get_multi an exception will be raised.
     def get_caches(*args)
-      raise NoGetMulti unless cache_store.respond_to? :get_multi
+      self.class.trace_execution_scoped(['CacheFu/get_caches']) do 
+        raise NoGetMulti unless cache_store.respond_to? :get_multi
 
-      options   = args.last.is_a?(Hash) ? args.pop : {}
-      cache_ids = args.flatten.map(&:to_s)
-      keys      = cache_keys(cache_ids)
+        options   = args.last.is_a?(Hash) ? args.pop : {}
+        cache_ids = args.flatten.map(&:to_s)
+        keys      = cache_keys(cache_ids)
 
-      # Map memcache keys to object cache_ids in { memcache_key => object_id } format
-      keys_map = Hash[*keys.zip(cache_ids.reject{|cid| cid.blank?}).flatten]
+        # Map memcache keys to object cache_ids in { memcache_key => object_id } format
+        keys_map = Hash[*keys.zip(cache_ids.reject{|cid| cid.blank?}).flatten]
 
-      # Call get_multi and figure out which keys were missed based on what was a hit
-      hits = ActsAsCached.config[:disabled] ? {} : (cache_store(:get_multi, *keys) || {})
+        # Call get_multi and figure out which keys were missed based on what was a hit
+        hits = ActsAsCached.config[:disabled] ? {} : (cache_store(:get_multi, *keys) || {})
 
-      # Misses can take the form of key => nil
-      hits.delete_if { |key, value| value.nil? }
+        # Misses can take the form of key => nil
+        hits.delete_if { |key, value| value.nil? }
 
-      misses = keys - hits.keys
-      hits.each { |k, v| hits[k] = nil if v == @@nil_sentinel }
-      hit_values = Hash[*hits.values.map{|h| [h[:value].id, h[:value]]}.flatten]
+        misses = keys - hits.keys
+        hits.each { |k, v| hits[k] = nil if v == @@nil_sentinel }
+        hit_values = Hash[*hits.values.map{|h| [h[:value].id, h[:value]]}.flatten]
 
-      # Return our hash if there are no misses
-      return hit_values if misses.empty?
+        # Return our hash if there are no misses
+        return hit_values if misses.empty?
 
-      # Find any missed records
-      needed_ids     = keys_map.values_at(*misses)
-      missed_records = Array(fetch_cachable_data(needed_ids))
+        # Find any missed records
+        needed_ids     = keys_map.values_at(*misses)
+        missed_records = Array(fetch_cachable_data(needed_ids))
 
-      # Cache the missed records
-      miss_values = {}
-      missed_records.flatten.each do |missed_record|
-        set_cache(missed_record.id.to_i, missed_record, options[:ttl])
-        miss_values[missed_record.id] = missed_record
-      end
+        # Cache the missed records
+        miss_values = {}
+        missed_records.flatten.each do |missed_record|
+          set_cache(missed_record.id.to_i, missed_record, options[:ttl])
+          miss_values[missed_record.id] = missed_record
+        end
       
-      # Return all records as a hash indexed by object cache_id
-      (hit_values.merge(miss_values))
+        # Return all records as a hash indexed by object cache_id
+        (hit_values.merge(miss_values))
+      end
     end
 
     # simple wrapper for get_caches that
     # returns the items as an ordered array
     def get_caches_as_list(*args)
-      multi_result = []
-      self.class.trace_execution_scoped(['CacheFu/multiget']) do 
-        cache_ids = args.last.is_a?(Hash) ? args.first : args
-        cache_ids = [cache_ids].flatten
-        hash      = get_caches(*args)
+      self.class.trace_execution_scoped(['CacheFu/get_caches_as_list']) do 
+        multi_result = []
+        self.class.trace_execution_scoped(['CacheFu/multiget']) do 
+          cache_ids = args.last.is_a?(Hash) ? args.first : args
+          cache_ids = [cache_ids].flatten
+          hash      = get_caches(*args)
 
-        multi_result = cache_ids.map do |key|
-          hash[key.to_i]
+          multi_result = cache_ids.map do |key|
+            hash[key.to_i]
+          end
         end
+        multi_result
       end
-      multi_result
     end
     
     def get(id)
-      return nil if id.nil? || (id == 0)
-      if id.is_a?(Array)
-        return [] if id.blank?
-        return [nil] if (id.length == 1) && ((id[0].nil?) || (id[0] == 0))
-        get_caches_as_list(id) rescue []
-      else
-        get_cache(id.to_i) rescue nil
+      self.class.trace_execution_scoped(['CacheFu/get']) do 
+        return nil if id.nil? || (id == 0)
+        if id.is_a?(Array)
+          return [] if id.blank?
+          return [nil] if (id.length == 1) && ((id[0].nil?) || (id[0] == 0))
+          get_caches_as_list(id) rescue []
+        else
+          get_cache(id.to_i) rescue nil
+        end
       end
     end
     
     def set_cache(cache_id, value, ttl = nil)
-      value.tap do |v|
-        v = @@nil_sentinel if v.nil?
+      self.class.trace_execution_scoped(['CacheFu/set_cache']) do 
+        value.tap do |v|
+          v = @@nil_sentinel if v.nil?
         
-        cache_time = ttl || cache_config[:ttl] || 1500
-        raise ArgumentError.new("ttl must be <= 30.days") if cache_time > 30.days
-        v = { :exxpiry => Time.now.utc + (0.8 * cache_time).round, :value => v } if cache_time > 5.seconds
+          cache_time = ttl || cache_config[:ttl] || 1500
+          raise ArgumentError.new("ttl must be <= 30.days") if cache_time > 30.days
+          v = { :exxpiry => Time.now.utc + (0.8 * cache_time).round, :value => v } if cache_time > 5.seconds
       
-        cache_store(:set, cache_key(cache_id), v, cache_time)
+          cache_store(:set, cache_key(cache_id), v, cache_time)
+        end
       end
     end
 
     def expire_cache(cache_id = nil)
-      cache_store(:delete, cache_key(cache_id))
-      true
+      self.class.trace_execution_scoped(['CacheFu/expire_cache']) do 
+        cache_store(:delete, cache_key(cache_id))
+        true
+      end
     end
     alias :clear_cache :expire_cache
 
     def reset_cache(cache_id = nil)
-      set_cache(cache_id, fetch_cachable_data(cache_id))
+      self.class.trace_execution_scoped(['CacheFu/reset_cache']) do 
+        set_cache(cache_id, fetch_cachable_data(cache_id))
+      end
     end
 
     ##
@@ -193,66 +205,82 @@ module ActsAsCached
     #     get_cache("find_popular:onetwo") { find_popular(:one, :two) }
     #   end
     def caches(method, options = {})
-      if options.keys.include?(:with)
-        with = options.delete(:with)
-        get_cache("#{method}:#{with}", options) { send(method, with) }
-      elsif withs = options.delete(:withs)
-        get_cache("#{method}:#{withs}", options) { send(method, *withs) }
-      else
-        get_cache(method, options) { send(method) }
+      self.class.trace_execution_scoped(['CacheFu/caches']) do 
+        if options.keys.include?(:with)
+          with = options.delete(:with)
+          get_cache("#{method}:#{with}", options) { send(method, with) }
+        elsif withs = options.delete(:withs)
+          get_cache("#{method}:#{withs}", options) { send(method, *withs) }
+        else
+          get_cache(method, options) { send(method) }
+        end
       end
     end
     alias :cached :caches
     alias :cached_method :caches
 
     def clear_caches(method, options = {})
-      if options.keys.include?(:with)
-        with = options.delete(:with)
-        clear_cache("#{method}:#{with}")
-      elsif withs = options.delete(:withs)
-        clear_cache("#{method}:#{withs}")
-      else
-        clear_cache(method)
+      self.class.trace_execution_scoped(['CacheFu/clear_caches']) do 
+        if options.keys.include?(:with)
+          with = options.delete(:with)
+          clear_cache("#{method}:#{with}")
+        elsif withs = options.delete(:withs)
+          clear_cache("#{method}:#{withs}")
+        else
+          clear_cache(method)
+        end
       end
     end
     alias :clear_cached_method :clear_caches
 
     def cached?(cache_id = nil)
-      fetch_cache(cache_id).nil? ? false : true
+      self.class.trace_execution_scoped(['CacheFu/cached?']) do 
+        fetch_cache(cache_id).nil? ? false : true
+      end
     end
     alias :is_cached? :cached?
     
    # Get a 5-second lock on another cache item
     def cache_lock(cache_id, lock_cache_time = 5.seconds)
-      stored = cache_store(:add, "lck_" + cache_key(cache_id), 1, lock_cache_time)
-      (stored =~ /^STORED/) != nil
+      self.class.trace_execution_scoped(['CacheFu/cache_lock']) do 
+        stored = cache_store(:add, "lck_" + cache_key(cache_id), 1, lock_cache_time)
+        (stored =~ /^STORED/) != nil
+      end
     end
 
     def cache_unlock(cache_id)
-      cache_store(:delete, "lck_" + cache_key(cache_id))
+      self.class.trace_execution_scoped(['CacheFu/cache_unlock']) do 
+        cache_store(:delete, "lck_" + cache_key(cache_id))
+      end
     end
     
     def fetch_cache(cache_id)
-      return if ActsAsCached.config[:skip_gets]
+      self.class.trace_execution_scoped(['CacheFu/fetch_cache']) do 
+        return if ActsAsCached.config[:skip_gets]
 
-      autoload_missing_constants do
-        cache_store(:get, cache_key(cache_id))
+        autoload_missing_constants do
+          cache_store(:get, cache_key(cache_id))
+        end
       end
     end
 
     def fetch_cachable_data(cache_id = nil)
-      return nil if cache_id.is_a?(String) && cache_id.include?(':')
+      self.class.trace_execution_scoped(['CacheFu/fetch_cachable_data']) do 
+        return nil if cache_id.is_a?(String) && cache_id.include?(':')
 
-      finder = :find
-      return send(finder) unless cache_id
+        finder = :find
+        return send(finder) unless cache_id
 
-      args = [cache_id].flatten
-      args << cache_options.dup unless cache_options.blank?
-      data = send(finder, *args) rescue nil
+        args = [cache_id].flatten
+        args << cache_options.dup unless cache_options.blank?
+        data = send(finder, *args) rescue nil
+      end
     end
 
     def cache_namespace
-      cache_store.respond_to?(:namespace) ? cache_store(:namespace) : (CACHE.instance_variable_get('@options') && CACHE.instance_variable_get('@options')[:namespace])
+      self.class.trace_execution_scoped(['CacheFu/cache_namespace']) do 
+        cache_store.respond_to?(:namespace) ? cache_store(:namespace) : (CACHE.instance_variable_get('@options') && CACHE.instance_variable_get('@options')[:namespace])
+      end
     end
 
     # Memcache-client automatically prepends the namespace, plus a colon, onto keys, so we take that into account for the max key length.
@@ -270,20 +298,26 @@ module ActsAsCached
     end
 
     def cache_keys(*cache_ids)
-      cache_ids.flatten.map { |cache_id| cache_key(cache_id) }
+      self.class.trace_execution_scoped(['CacheFu/cache_keys']) do 
+        cache_ids.flatten.map { |cache_id| cache_key(cache_id) }
+      end
     end
 
     def cache_key(cache_id)
-      [cache_name, cache_config[:version], cache_id].compact.join(':').gsub(' ', '_')[0..(max_key_length - 1)]
+      self.class.trace_execution_scoped(['CacheFu/cache_key']) do 
+        [cache_name, cache_config[:version], cache_id].compact.join(':').gsub(' ', '_')[0..(max_key_length - 1)]
+      end
     end
 
     def cache_store(method = nil, *args)
-      return cache_config[:store] unless method
+      self.class.trace_execution_scoped(['CacheFu/cache_store']) do       
+        return cache_config[:store] unless method
 
-      load_constants = %w( get get_multi ).include? method.to_s
+        load_constants = %w( get get_multi ).include? method.to_s
 
-      swallow_or_raise_cache_errors(load_constants) do
-        cache_config[:store].send(method, *args)
+        swallow_or_raise_cache_errors(load_constants) do
+          cache_config[:store].send(method, *args)
+        end
       end
     end
 
