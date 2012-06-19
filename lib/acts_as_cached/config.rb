@@ -19,17 +19,17 @@ module ActsAsCached
 
       config.symbolize_keys!
 
-      setup_benchmarking! if config[:benchmarking] && !config[:disabled]
+      # setup_benchmarking! if config[:benchmarking] && !config[:disabled]
 
       setup_cache_store! config
       config
     end
 
-    def setup_benchmarking!
-      ActiveSupport.on_load(:action_controller) do
-        include ActsAsCached::MemcacheRuntime
-      end
-    end
+    # def setup_benchmarking!
+    #   ActiveSupport.on_load(:action_controller) do
+    #     include ActsAsCached::MemcacheRuntime
+    #   end
+    # end
 
     def setup_cache_store!(config)
       config[:store] =

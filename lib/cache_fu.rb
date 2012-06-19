@@ -1,6 +1,6 @@
 require File.dirname(__FILE__) + '/acts_as_cached/config'
 require File.dirname(__FILE__) + '/acts_as_cached/cache_methods'
-require File.dirname(__FILE__) + '/acts_as_cached/benchmarking'
+# require File.dirname(__FILE__) + '/acts_as_cached/benchmarking'
 require File.dirname(__FILE__) + '/acts_as_cached/disabled'
 require File.dirname(__FILE__) + '/acts_as_cached/railtie' if defined?(Rails::Railtie)
 
@@ -55,7 +55,7 @@ module ActsAsCached
       cache_options.replace options.reject { |key,| Config.valued_keys.include? key }
 
       Disabled.add_to self and return if ActsAsCached.config[:disabled]
-      Benchmarking.add_to self if ActsAsCached.config[:benchmarking]
+      # Benchmarking.add_to self if ActsAsCached.config[:benchmarking]
     end
     
     def create_expire_cache_method(fields)
