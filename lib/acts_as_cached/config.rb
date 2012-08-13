@@ -67,7 +67,7 @@ module ActsAsCached
     end
 
     def memcache_client(config)
-      (config[:client] || "MemCache").classify.constantize.new(config)
+      (config[:client] || "Dalli::Client").classify.constantize.new(config)
     end
 
     def setup_session_store
